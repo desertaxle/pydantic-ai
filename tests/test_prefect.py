@@ -186,6 +186,21 @@ class BasicSpan:
     parent_id: int | None = field(repr=False, compare=False, default=None)
 
 
+def sort_basic_span_tree(span: BasicSpan) -> BasicSpan:
+    """
+    Recursively sort all children in a BasicSpan tree to ensure deterministic ordering.
+
+    This is necessary because concurrent operations (like parallel tool calls) can complete
+    in non-deterministic order, causing flaky test failures when comparing span trees.
+    """
+    # Sort children by their content (convert to string for consistent comparison)
+    span.children.sort(key=lambda child: str(child.content))
+    # Recursively sort all children
+    for child in span.children:
+        sort_basic_span_tree(child)
+    return span
+
+
 complex_agent = Agent(
     model,
     deps_type=Deps,
@@ -247,6 +262,10 @@ async def test_complex_agent_run_in_flow(allow_model_requests: None, capfire: Ca
             parent_id = basic_span.parent_id
             parent_span = basic_spans_by_id[parent_id]
             parent_span.children.append(basic_span)
+
+    # Sort the span tree to ensure deterministic ordering for concurrent operations
+    if root_span:
+        sort_basic_span_tree(root_span)
 
     assert root_span == snapshot(
         BasicSpan(
